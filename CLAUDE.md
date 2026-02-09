@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-## 1. Project Overview
+## 1. Project Overview 
 
 This project translates filed federal/state tax returns and supporting documentation into a Python codebase that reproduces the return values for each year. Goals:
 1. Clarify how taxes are calculated
