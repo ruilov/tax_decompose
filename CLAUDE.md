@@ -260,6 +260,7 @@ Write docstrings that include:
 - Use type hints.
 - When a line has many potential inputs but most are zero, simplify the function to only take the non-zero ones. If a future year has non-zero values, add the inputs back then.
 - All tag-based input loading must go through `tag_total(...)`. Do not add alternate tag access helpers.
+- Avoid year-specific fallback branches in `tax.py`. Prefer data/policy differences over `if year == ...` code paths unless absolutely unavoidable.
 - Path loading for JSON files should be file-relative and respect the repo split:
   - `public/` for policy files
   - `private/` for inputs/expected
@@ -320,6 +321,7 @@ Marginal outputs are local derivatives at the current return point and can diffe
 
 ### Philosophy
 Tests are the contract: computed values must match the filed return. Add tests incrementally as functions are implemented. Always run the test suite after any code or data change unless the user says not to.
+Never report "tests pass" unless tests were actually run in the current turn.
 
 ### Test Layers
 1. **Anchor tests** (high value, implement early): AGI, taxable income, total tax, total payments, refund/amount owed, state equivalents
@@ -358,7 +360,8 @@ Tests can call other tests to get computed values for dependent calculations.
 ### Expected-Driven Runner
 `test_expected_values()` loads each `private/expected_YYYY.json`, enumerates every expected value path, and runs the registered test for that path. Missing tests fail fast.
 This ensures every expected value has a test and that all years in `YEARS` are exercised.
-Both `pytest` and `python test_tax.py` should run through `test_expected_values()` only.
+Both `pytest` and `python public/test_tax.py` should run through `test_expected_values()` only.
+When reporting test status, include the exact command run and whether it passed or failed.
 
 ### Internal Compute Checks (Required)
 - Keep compute-line assertions active in top-level compute functions:
@@ -405,13 +408,14 @@ Summarize:
 
 ### Task D: Time-Boxed Decomposition Loop
 When the user specifies a time limit for recursive decomposition:
-1. Add the requested tasks explicitly. If none identified yet, start with total tax paid federal and for each state. If the inputs JSON already has partial work, summarize open inputs and issues first.
+1. Add requested tasks to the agent's internal todo list (not to `CLAUDE.md` unless explicitly requested). If none identified yet, start with total tax paid federal and for each state. If the inputs JSON already has partial work, summarize open inputs and issues first.
 2. For each task, implement the calculation from upstream inputs. Run all tests when you finish a task, before starting a new task.
 3. If intermediate inputs come directly from the return, add new tasks to decompose them.
-4. Continue recursively until the time limit is reached or user input is needed.
-5. Check the clock after each task and report timestamps.
-6. Summarize what was completed and what remains.
-7. After each loop, list all outstanding inputs and issues, including placeholders, derived values, and missing source documents.
+4. Continue recursively until the time limit is reached.
+5. If blocked on a task and the user asked for autonomous progress, skip that task, record the blocker, and move to the next task.
+6. Check the clock after each task and report timestamps.
+7. Summarize what was completed and what remains.
+8. After each loop, list all outstanding inputs and issues, including placeholders, derived values, and missing source documents.
 Notes:
 - Prefer itemized input lists grouped under each source key for multi-document totals.
 - When a value must be derived as a placeholder, state the exact arithmetic used and call out the missing source document.
@@ -422,6 +426,11 @@ There are 2 types of decomposition tasks
 2) Remove an input X from DERIVED and add inputs [Y] to various sources, where [Y] has the same tag as X. File names of the supporting sources may give you a clue as to where to search for the source of the input.
 
 In each of these tasks, think about whether the input X should be added to expected_[YYYY].json. If a test already exists for it in test_tax.py then that's a major clue that you should add a test. 
+Atomic completion checklist per decomposition task:
+- Add/adjust the required source-backed or derived inputs.
+- Add/update expected value(s) if the line is now computed and testable.
+- Remove the replaced placeholder from `DERIVED` in the same task.
+- Run the full test suite before moving to the next task.
 Critical consistency rule:
 - Never keep the same line as both:
   - an expected tested output in `private/expected_YYYY.json`, and
@@ -444,6 +453,7 @@ When verifying inputs against source documents:
    - `Checked: true` when the amount is confirmed in the stated source/path.
    - `Checked: false` when checked but not confirmed (including extraction/OCR failure after fallback).
 7. In normal loop mode, if an item cannot be confirmed, skip to the next item unless the developer explicitly requested stop-on-fail behavior.
+8. For dense table PDFs, explicitly confirm row/column alignment before changing classification tags (passive/non-passive, federal/state, etc.). If alignment remains ambiguous, leave the item unchanged and continue.
 
 ### Task G: Marginal Rate Table
 Implemented in `tax.py` as:
